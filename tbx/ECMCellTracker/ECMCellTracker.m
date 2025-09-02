@@ -189,7 +189,6 @@ classdef ECMCellTracker
             LAP.LinkCostMetric = 'euclidean';
             LAP.TrackDivision = true;
             LAP.LinkScoreRange = [0 opts.MaxLinkingDistance];
-            LAP.DivisionParameter = 'mitosis';
             LAP.DivisionScoreRange = [0 12];
 
             %Create output video file
@@ -303,7 +302,7 @@ classdef ECMCellTracker
 
                     %TODO: Only for exportedtiff for now...
                     mask = imread(fullfile(dataDir, [loc, '_mask.tif']), iT);
-                    mask = mask > 0;
+                    mask = mask == 0;
 
                 end
 
@@ -326,11 +325,7 @@ classdef ECMCellTracker
                     data(iData).ERKintensity = mean(Iacceptor(data(iData).PixelIdxList) ./ Idonor(data(iData).PixelIdxList), 'all');
                 end
 
-                try
                 LAP = assignToTrack(LAP, iT, data);
-                catch
-                    keyboard
-                end
 
                 %Generate output video
 
@@ -414,14 +409,12 @@ classdef ECMCellTracker
 
             dd = -bwdist(~mask);
             dd(~mask) = false;
-            dd = imhmin(dd, 1.5);
+            dd = imhmin(dd, 0.7);
 
             L = watershed(dd);
 
-            mask(L == 0) = false;            
+            mask(L == 0) = false;
             mask = imclearborder(mask);
-
-            mask = imfill(mask, 'holes');
 
             mask = bwareaopen(mask, 20);
 
