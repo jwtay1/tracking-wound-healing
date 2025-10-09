@@ -277,7 +277,7 @@ classdef ECMCellTracker
 
                 end
 
-                %Convert donor and acceptor to douvles
+                %Convert donor and acceptor to doubles
                 Idonor = double(Idonor);
                 Iacceptor = double(Iacceptor);
 
@@ -311,19 +311,25 @@ classdef ECMCellTracker
                 cc = bwlabeln(mask);
 
                 %Measure nuclei position
-                data = regionprops(cc, 'Centroid', 'PixelIdxList', 'Area');
+                data = regionprops(cc, 'Centroid', 'PixelIdxList', 'Area', 'Circularity');
 
                 %Make a cytoplasmic ring
                 cytoMask = imdilate(cc, strel('disk', 3));
                 cytoMask(cc > 0) = 0;
 
+                cytoData = regionprops(cytoMask, 'PixelIdxList');
+
                 %Measure ERK channel intensities
                 % cytoData = regionprops(cytoMask, Iacceptor./Idonor, 'MeanIntensity');
 
                 for iData = 1:numel(data)
-                    data(iData).DonorIntensity = mean(Idonor(data(iData).PixelIdxList), 'all');
-                    data(iData).AcceptorIntensity = mean(Iacceptor(data(iData).PixelIdxList), 'all');
-                    data(iData).ERKintensity = mean(Iacceptor(data(iData).PixelIdxList) ./ Idonor(data(iData).PixelIdxList), 'all');
+                    data(iData).DonorIntensityNucl = mean(Idonor(data(iData).PixelIdxList), 'all');
+                    data(iData).AcceptorIntensityNucl = mean(Iacceptor(data(iData).PixelIdxList), 'all');
+                    data(iData).ERKintensityNucl = mean(Iacceptor(data(iData).PixelIdxList) ./ Idonor(data(iData).PixelIdxList), 'all');
+
+                    data(iData).DonorIntensityCyto = mean(Idonor(cytoData(iData).PixelIdxList), 'all');
+                    data(iData).AcceptorIntensityCyto = mean(Iacceptor(cytoData(iData).PixelIdxList), 'all');
+                    data(iData).ERKintensityCyto = mean(Iacceptor(cytoData(iData).PixelIdxList) ./ Idonor(cytoData(iData).PixelIdxList), 'all');                    
                 end
 
                 try
@@ -359,6 +365,14 @@ classdef ECMCellTracker
                 end
 
                 writeVideo(vid, Iout);
+
+                %Make the wound mask
+                woundMask = ECMCellTracker.segmentWound(Idonor);
+                if iT == opts.FrameRange(1)
+                    imwrite(woundMask, fullfile(outputDir, [outputFN, '_woundMask.tif']), 'Compression', 'none');
+                else
+                    imwrite(woundMask, fullfile(outputDir, [outputFN, '_woundMask.tif']), 'Compression', 'none', 'writeMode', 'append');
+                end
 
             end
             close(vid)
@@ -679,6 +693,43 @@ classdef ECMCellTracker
             imageIn = double(imageIn);
             imageOut = (imageIn - min(imageIn, [], 'all'))/(max(imageIn, [], 'all') - min(imageIn, [], 'all'));
             imageOut = uint8(imageOut * 255);
+
+        end
+
+        function finalWoundMask = segmentWound(I)
+            %SEGMENTWOUND  Segment the wound area
+            %
+            %  M = SEGMENTWOUND(I) returns a logical mask M from the image
+            %  of the donor channel (I).
+
+            %Normalize image intensity
+            I = double(I);
+            I = (I - min(I(:)))./(max(I(:))-min(I(:)));
+
+            I = imgaussfilt(I, 2);
+            I = medfilt2(I, [5 5]);
+
+            %Calculate image intensity histogram
+            [cnts, edges] = histcounts(I(:));
+            [bgPk, bgLoc] = findpeaks(cnts, 'MinPeakProminence', 10000);
+
+            binCenters = edges(1:end - 1) + (0.5 * diff(edges));
+
+            %plot(binCenters,cnts, binCenters(bgLoc(1)), bgPk(1), 'x')
+
+            %thLvl = mode(I, 'all');
+            thLvl = binCenters(bgLoc(1));
+
+            woundMask = I <= (1.5 * thLvl);
+            woundMask = imfill(woundMask, 'holes');
+
+            %Keep only largest area
+            data = regionprops(woundMask, 'Area', 'PixelIdxList');
+            areas = [data.Area];
+
+            finalWoundMask = false(size(woundMask));
+            finalWoundMask(data(areas == max(areas)).PixelIdxList) = true;
+
 
         end
 
